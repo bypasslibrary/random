@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Колесо фортуны</title>
+<style>
+html,body{
+  margin:0;
+  padding:0;
+  min-height:100vh;
+  font-family:system-ui,-apple-system,"Segoe UI",sans-serif;
+  background:radial-gradient(circle at top,#1b1f3b,#05060f);
+  color:#fff;
+}
+body{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+}
+
+.container{
+  max-width:420px;
+  width:100%;
+  padding:16px;
+  text-align:center;
+}
+
+h1{margin-bottom:12px;font-size:28px}
+
+textarea{
+  width:100%;
+  min-height:80px;
+  border-radius:12px;
+  border:none;
+  padding:10px;
+  font-size:14px;
+  margin-bottom:14px;
+}
+
+.wheel-wrap{display:flex;justify-content:center}
+
+canvas#wheel{
+  width:320px;
+  height:320px;
+  background:#0b0e24;
+  border-radius:50%;
+  box-shadow:0 0 40px rgba(120,160,255,.4)
+}
+
+.controls{margin-top:14px}
+
+button{
+  padding:12px 26px;
+  font-size:16px;
+  border-radius:30px;
+  border:none;
+  cursor:pointer;
+  background:linear-gradient(135deg,#7f9cff,#4b6bff);
+  color:#fff;
+  box-shadow:0 6px 18px rgba(0,0,0,.4)
+}
+
+.result{margin-top:12px;font-size:18px;min-height:24px;color:#bcd0ff}
+
+canvas.confetti{
+  position:fixed;
+  inset:0;
+  pointer-events:none;
+}
+
+/* настройки теперь ВСЕГДА в правом верхнем углу экрана */
+.settings{
+  position:fixed;
+  top:12px;
+  right:12px;
+  z-index:10;
+  background:rgba(0,0,0,.45);
+  backdrop-filter:blur(6px);
+  border-radius:12px;
+  padding:10px 12px;
+  font-size:12px;
+  text-align:left
+}
+.settings label{
+  display:flex;
+  align-items:center;
+  gap:6px;
+  margin-bottom:6px;
+  cursor:pointer
+}
+.settings input{cursor:pointer}
+</style>
+</head>
+<body>
+
+<div class="settings">
+  <label><input type="checkbox" id="monoToggle"> монохром</label>
+  <label><input type="checkbox" id="spamToggle"> спам-крутить</label>
+</div>
+
+<div class="container">
+  <h1>🎡 Колесо фортуны</h1>
+
+  <textarea id="options">1
+2
+3
+4
+5</textarea>
+
+  <div class="wheel-wrap">
+    <canvas id="wheel" width="320" height="320"></canvas>
+  </div>
+
+  <div class="controls">
+    <button id="spinBtn">Крутить</button>
+    <div class="result" id="result"></div>
+  </div>
+</div>
+
+<canvas class="confetti" id="confetti"></canvas>
+
+<script>
+const wheel=document.getElementById('wheel');
+const ctx=wheel.getContext('2d');
+const resultEl=document.getElementById('result');
+const optionsInput=document.getElementById('options');
+const confetti=document.getElementById('confetti');
+const cctx=confetti.getContext('2d');
+const monoToggle=document.getElementById('monoToggle');
+const spamToggle=document.getElementById('spamToggle');
+const spinBtn=document.getElementById('spinBtn');
+
+function resizeConfetti(){
+  confetti.width=window.innerWidth;
+  confetti.height=window.innerHeight;
+}
+resizeConfetti();
+window.addEventListener('resize',resizeConfetti);
+
+let sectors=[];
+let angle=0;
+let velocity=0;
+let spinning=false;
+let userHolding=false;
+
+const pointerAngle=-Math.PI/2; // стрелка смотрит вниз
+
+function getSectors(){
+  sectors=optionsInput.value.split('\n').map(v=>v.trim()).filter(Boolean);
+}
+
+function drawWheel(){
+  getSectors();
+  const count=Math.max(sectors.length,1);
+  const r=wheel.width/2;
+  const arc=2*Math.PI/count;
+
+  ctx.clearRect(0,0,wheel.width,wheel.height);
+  ctx.save();
+  ctx.translate(r,r);
+  ctx.rotate(angle);
+
+  for(let i=0;i<count;i++){
+    ctx.beginPath();
+    ctx.moveTo(0,0);
+    ctx.arc(0,0,r,i*arc,(i+1)*arc);
+    ctx.fillStyle=monoToggle.checked ? '#cfd6ff' : `hsl(${i*360/count},85%,60%)`;
+    ctx.fill();
+
+    if(sectors[i]){
+      ctx.save();
+      ctx.rotate(i*arc+arc/2);
+      ctx.textAlign='right';
+      ctx.fillStyle='#000';
+      ctx.font='15px sans-serif';
+      ctx.fillText(sectors[i],r-10,5);
+      ctx.restore();
+    }
+  }
+  ctx.restore();
+
+  // стрелка (вниз)
+  ctx.fillStyle='#fff';
+  ctx.beginPath();
+  ctx.moveTo(r,36);
+  ctx.lineTo(r-14,8);
+  ctx.lineTo(r+14,8);
+  ctx.closePath();
+  ctx.fill();
+}
+
+function finishSpin(){
+  if(sectors.length<2){
+    resultEl.textContent='Добавь варианты';
+    return;
+  }
+  const arc=2*Math.PI/sectors.length;
+  const normalized=(pointerAngle-angle%(2*Math.PI)+2*Math.PI)%(2*Math.PI);
+  const index=Math.floor(normalized/arc)%sectors.length;
+  resultEl.textContent='Результат: '+sectors[index];
+  launchConfetti();
+}
+
+function animate(){
+  if(!spinning) return;
+
+  angle+=velocity;
+  velocity*=0.985;
+  drawWheel();
+
+  // ❗ КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ:
+  // результат ТОЛЬКО если пользователь НЕ держит кнопку
+  if(velocity<0.003 && !userHolding){
+    spinning=false;
+    velocity=0;
+    finishSpin();
+    return;
+  }
+
+  requestAnimationFrame(animate);
+}
+
+spinBtn.onpointerdown=()=>{
+  getSectors();
+  if(sectors.length<2){
+    resultEl.textContent='Минимум 2 варианта';
+    return;
+  }
+
+  userHolding=true;
+
+  if(!spinning){
+    spinning=true;
+    velocity=Math.random()*0.4+0.35;
+    resultEl.textContent='';
+    animate();
+  }else if(spamToggle.checked){
+    velocity+=0.18; // разгон при спаме
+  }
+};
+
+spinBtn.onpointerup=()=>{
+  userHolding=false;
+};
+
+spinBtn.onpointerleave=()=>{
+  userHolding=false;
+};
+
+function launchConfetti(){
+  const pieces=Array.from({length:220},()=>({
+    x:Math.random()*confetti.width,
+    y:-Math.random()*confetti.height,
+    w:Math.random()*6+4,
+    h:Math.random()*10+6,
+    r:Math.random()*Math.PI,
+    vr:(Math.random()-.5)*0.2,
+    vy:Math.random()*3+2,
+    c:`hsl(${Math.random()*360},90%,60%)`
+  }));
+
+  function fall(){
+    cctx.clearRect(0,0,confetti.width,confetti.height);
+    let alive=false;
+    for(const p of pieces){
+      p.y+=p.vy;
+      p.r+=p.vr;
+      if(p.y<confetti.height+40) alive=true;
+      cctx.save();
+      cctx.translate(p.x,p.y);
+      cctx.rotate(p.r);
+      cctx.fillStyle=p.c;
+      cctx.fillRect(-p.w/2,-p.h/2,p.w,p.h);
+      cctx.restore();
+    }
+    if(alive) requestAnimationFrame(fall);
+    else cctx.clearRect(0,0,confetti.width,confetti.height);
+  }
+  fall();
+}
+
+optionsInput.addEventListener('input',drawWheel);
+monoToggle.addEventListener('change',drawWheel);
+
+getSectors();
+drawWheel();
+</script>
+</body>
+</html>
