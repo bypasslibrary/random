@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Колесо фортуны</title>
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;min-height:100vh;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;background:radial-gradient(circle at top,#1b1f3b,#05060f);color:#fff}
+body{display:flex;justify-content:center;align-items:flex-start}
+
+.container{width:100%;max-width:480px;padding:16px 16px 32px;text-align:center}
+h1{margin:12px 0 18px}
+
+/* ===== options ===== */
+.options-wrap{border:1px solid rgba(255,255,255,.35);border-radius:14px;background:rgba(0,0,0,.35);margin-bottom:24px;overflow:hidden}
+.options-head{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;cursor:pointer}
+.options-body{padding:12px}
+.options-wrap.collapsed .options-body{display:none}
+textarea{width:100%;min-height:70px;border-radius:10px;border:none;padding:10px;font-size:14px;resize:vertical}
+
+/* ===== wheel ===== */
+.wheel-wrap{position:relative;display:flex;justify-content:center;margin:36px 0 18px}
+#wheel{width:340px;height:340px;border-radius:50%;background:#0b0e24;box-shadow:0 0 45px rgba(120,160,255,.35);display:block}
+
+.pointer{position:absolute;top:-16px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:14px solid transparent;border-right:14px solid transparent;border-top:22px solid #fff;z-index:5}
+
+.center-hub{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);pointer-events:none;z-index:4}
+.center-hub .hub{width:76px;height:76px;border-radius:50%;background:radial-gradient(circle at top,#2a3170,#0b0e24);box-shadow:0 0 20px rgba(120,160,255,.6), inset 0 0 10px rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;font-weight:700;letter-spacing:2px}
+
+/* ===== controls ===== */
+.controls{margin-top:10px}
+#spinBtn{padding:18px 46px;font-size:20px;border-radius:40px;border:none;cursor:pointer;background:linear-gradient(135deg,#7f9cff,#4b6bff);color:#fff;box-shadow:0 10px 24px rgba(0,0,0,.45);outline:none;-webkit-tap-highlight-color:transparent}
+
+/* ===== settings ===== */
+.settings{position:fixed;top:12px;right:12px;z-index:10;background:rgba(0,0,0,.45);backdrop-filter:blur(6px);border-radius:12px;padding:10px 12px;font-size:12px}
+.settings label{display:flex;gap:6px;align-items:center;margin-bottom:6px;cursor:pointer;-webkit-tap-highlight-color:transparent}
+
+/* ===== modal ===== */
+.modal{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.55);z-index:20}
+.modal.show{display:flex}
+.modal-box{background:linear-gradient(135deg,#1b2147,#0b0e24);border-radius:18px;padding:26px 30px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.6);min-width:260px;animation:pop .25s ease}
+@keyframes pop{from{transform:scale(.85);opacity:0}to{transform:scale(1);opacity:1}}
+.modal-title{font-size:18px;margin-bottom:10px}
+.modal-value{font-size:26px;font-weight:600;margin-bottom:18px;word-break:break-word}
+.modal-btn{padding:10px 26px;border:none;border-radius:30px;font-size:16px;cursor:pointer;background:linear-gradient(135deg,#7f9cff,#4b6bff);color:#fff;outline:none;-webkit-tap-highlight-color:transparent}
+
+/* ===== confetti ===== */
+canvas.confetti{position:fixed;inset:0;pointer-events:none;z-index:15}
+</style>
+</head>
+<body>
+
+<div class="settings">
+  <label><input type="checkbox" id="monoToggle"> монохром</label>
+  <label><input type="checkbox" id="spamToggle"> спам-крутить</label>
+  <label><input type="checkbox" id="hideTextToggle"> скрыть текст</label>
+</div>
+
+<div class="container">
+<h1>🎡 Колесо фортуны</h1>
+
+<div class="options-wrap" id="optWrap">
+  <div class="options-head" id="optHead">Варианты <span id="arrow">▲</span></div>
+  <div class="options-body">
+    <textarea id="options">1
+2
+3</textarea>
+  </div>
+</div>
+
+<div class="wheel-wrap">
+  <div class="pointer"></div>
+  <canvas id="wheel" width="340" height="340"></canvas>
+  <div class="center-hub"><div class="hub">BL</div></div>
+</div>
+
+<div class="controls">
+  <button id="spinBtn">Крутить</button>
+</div>
+</div>
+
+<div class="modal" id="resultModal">
+  <div class="modal-box">
+    <div class="modal-title">🎉 Результат</div>
+    <div class="modal-value" id="modalValue"></div>
+    <button class="modal-btn" id="closeModal">ОК</button>
+  </div>
+</div>
+
+<canvas class="confetti" id="confetti"></canvas>
+
+<script>
+const wheel=document.getElementById('wheel');
+const ctx=wheel.getContext('2d');
+const optionsInput=document.getElementById('options');
+const monoToggle=document.getElementById('monoToggle');
+const spamToggle=document.getElementById('spamToggle');
+const hideTextToggle=document.getElementById('hideTextToggle');
+const spinBtn=document.getElementById('spinBtn');
+const confetti=document.getElementById('confetti');
+const cctx=confetti.getContext('2d');
+const modal=document.getElementById('resultModal');
+const modalValue=document.getElementById('modalValue');
+const closeModal=document.getElementById('closeModal');
+const optWrap=document.getElementById('optWrap');
+const optHead=document.getElementById('optHead');
+const arrow=document.getElementById('arrow');
+
+let sectors=[],angle=0,velocity=0,spinning=false,holding=false;
+
+optHead.onclick=()=>{optWrap.classList.toggle('collapsed');arrow.textContent=optWrap.classList.contains('collapsed')?'▼':'▲'};
+
+function parseSectors(){sectors=optionsInput.value.split('\n').map(v=>v.trim()).filter(Boolean)}
+
+function drawSectorText(text,r,arc){
+  const radius=r*0.62;
+  const maxWidth=arc*radius*0.9;
+  let fontSize=18;
+  ctx.textAlign='center';
+  ctx.textBaseline='middle';
+  while(fontSize>2){
+    ctx.font=`${fontSize}px sans-serif`;
+    if(ctx.measureText(text).width<=maxWidth) break;
+    fontSize--;
+  }
+  if(fontSize<=2) return;
+  ctx.fillText(text,radius,0);
+}
+
+function drawWheel(){
+  parseSectors();
+  const count=Math.max(sectors.length,1);
+  const r=wheel.width/2;
+  const arc=2*Math.PI/count;
+  ctx.clearRect(0,0,wheel.width,wheel.height);
+  ctx.save(); ctx.translate(r,r); ctx.rotate(angle);
+  for(let i=0;i<count;i++){
+    ctx.beginPath(); ctx.moveTo(0,0);
+    ctx.arc(0,0,r,i*arc,(i+1)*arc);
+    ctx.closePath();
+    ctx.fillStyle=monoToggle.checked?'#dfe4ff':`hsl(${i*360/count},85%,60%)`;
+    ctx.fill();
+    ctx.strokeStyle='rgba(255,255,255,.7)'; ctx.lineWidth=2; ctx.stroke();
+    if(sectors[i] && !hideTextToggle.checked){
+      ctx.save(); ctx.rotate(i*arc+arc/2);
+      ctx.fillStyle='#000'; drawSectorText(sectors[i],r,arc);
+      ctx.restore();
+    }
+  }
+  ctx.restore();
+}
+
+function resizeConfetti(){confetti.width=innerWidth;confetti.height=innerHeight}
+resizeConfetti(); addEventListener('resize',resizeConfetti);
+
+function launchConfetti(){
+  const pieces=Array.from({length:200},()=>({x:Math.random()*confetti.width,y:-Math.random()*confetti.height,w:Math.random()*6+4,h:Math.random()*10+6,r:Math.random()*Math.PI,vr:(Math.random()-.5)*0.2,vy:Math.random()*3+2,c:`hsl(${Math.random()*360},90%,60%)`}));
+  function fall(){
+    cctx.clearRect(0,0,confetti.width,confetti.height); let alive=false;
+    for(const p of pieces){p.y+=p.vy;p.r+=p.vr;if(p.y<confetti.height+40)alive=true;cctx.save();cctx.translate(p.x,p.y);cctx.rotate(p.r);cctx.fillStyle=p.c;cctx.fillRect(-p.w/2,-p.h/2,p.w,p.h);cctx.restore()}
+    if(alive) requestAnimationFrame(fall);
+  }
+  fall();
+}
+
+function finishSpin(){
+  if(sectors.length<2) return;
+  const arc=2*Math.PI/sectors.length;
+  const pointerAngle=-Math.PI/2;
+  let a=(pointerAngle-angle)%(2*Math.PI); if(a<0)a+=2*Math.PI;
+  const index=Math.floor(a/arc);
+  const value=sectors[index]; if(!value) return;
+  modalValue.textContent=value;
+  modal.classList.add('show');
+  launchConfetti();
+}
+
+function animate(){
+  if(!spinning) return;
+  angle+=velocity; velocity*=0.985; drawWheel();
+  if(velocity<0.003 && !holding){spinning=false;velocity=0;finishSpin();return}
+  requestAnimationFrame(animate);
+}
+
+spinBtn.onpointerdown=()=>{
+  parseSectors(); if(sectors.length<2) return;
+  holding=true;
+  if(!spinning){spinning=true;velocity=Math.random()*0.45+0.35;animate()}
+  else if(spamToggle.checked){velocity+=0.2}
+};
+spinBtn.onpointerup=()=>holding=false;
+spinBtn.onpointerleave=()=>holding=false;
+
+optionsInput.oninput=drawWheel;
+monoToggle.onchange=drawWheel;
+hideTextToggle.onchange=drawWheel;
+closeModal.onclick=()=>modal.classList.remove('show');
+
+requestAnimationFrame(drawWheel);
+</script>
+</body>
+</html>
